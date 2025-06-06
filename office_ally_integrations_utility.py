@@ -1,9 +1,13 @@
 from datetime import datetime
+import json
 import re
 from typing import Any, Dict, List, Optional, Tuple
 from bs4 import BeautifulSoup
 from fastapi.logger import logger
 from pydantic import BaseModel
+from urllib import parse
+
+import requests
 
 _FIELD_MAPPING = {
     "ChiefComplaint": "ctl00$phFolderContent$ucSOAPNote$S_ChiefComplaint",
@@ -25,6 +29,636 @@ _FIELD_MAPPING = {
     "DiagnosisDescription_1_ICD10": "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_10_1",
 }
 
+DEMO_PAYLOAD = {
+    "__EVENTTARGET": "",
+    "__EVENTARGUMENT": "",
+    "__LASTFOCUS": "",
+    "__VIEWSTATE": "PLACEHOLDER",
+    "__VIEWSTATEGENERATOR": "226FEE4A",
+    "__SCROLLPOSITIONX": "0",
+    "__SCROLLPOSITIONY": "248.8000030517578",
+    "__VIEWSTATEENCRYPTED": "",
+    "__RequestVerificationToken": "WTJPZdo4yn6btUNBKT8bWc6BvFlWLBbQBIf5tSQXArrfeL5HSFN6EPUX89yAnid8ghn1Rzpb-Swyqd9Owg_TXCUAUu-WM--NGbp4mScPpCxGwTdSjSkkHtXzOYSuk02rSlJDQMSXLK9I9XWbDA7dEQS-6vU1",
+    "PageAction": "",
+    "PatientID": "",
+    "ID": "",
+    "ctl00$phFolderContent$PatientChartsScripts$hdnMissingPatientID": "",
+    "ctl00$phFolderContent$myPatientHeader$PatientImageFileName": "",
+    "ctl00$phFolderContent$myPatientHeader$PatientDOB": "01/01/1900",
+    "ctl00$phFolderContent$myPatientHeader$PatientAge": "125 yrs. 5 mos. old",
+    "ctl00$phFolderContent$myPatientHeader$PatientGender": "M",
+    "ctl00$phFolderContent$myPatientHeader$PatientWeight": "",
+    "ctl00$phFolderContent$myPatientHeader$hdnDate1": "",
+    "ctl00$phFolderContent$myPatientHeader$hdnDate2": "",
+    "ctl00$phFolderContent$myPatientHeader$AddEducationalResourcePopup$hdnPatientName": "4TH, OF JULY",
+    "activeelement": "",
+    "aeselpos": "",
+    "ctl00$phFolderContent$ucSOAPNote$EncounterDate$Month": "6",
+    "ctl00$phFolderContent$ucSOAPNote$EncounterDate$Day": "5",
+    "ctl00$phFolderContent$ucSOAPNote$EncounterDate$Year": "2025",
+    "ctl00$phFolderContent$ucSOAPNote$lstProvider": "198417",
+    "ctl00$phFolderContent$ucSOAPNote$lstTreatingProviderRole": "1",
+    "ctl00$phFolderContent$ucSOAPNote$lstOffice": "166396",
+    "ctl00$phFolderContent$ucSOAPNote$lstEncounterType": "1",
+    "ctl00$phFolderContent$ucSOAPNote$ddlInfoSource": "",
+    "ctl00$phFolderContent$ucSOAPNote$lstSpecialty": "",
+    "ctl00$phFolderContent$ucSOAPNote$lstSOAPGuideline": "0",
+    "ctl00$phFolderContent$ucSOAPNote$LOS": "Vijai Daniel",
+    "ctl00$phFolderContent$ucSOAPNote$ReferringProviderID": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ReferringProvider": " ",
+    "ctl00$phFolderContent$ucSOAPNote$btnTriggerSave": ".",
+    "ctl00$phFolderContent$ucSOAPNote$ddlSoapLayout": "347185",
+    "ctl00$phFolderContent$ucSOAPNote$ReasonForVisit": "",
+    "ctl00$phFolderContent$ucSOAPNote$NurseNote": "",
+    "ctl00$phFolderContent$ucSOAPNote$chkPrint_CPT": "on",
+    "ctl00$phFolderContent$ucSOAPNote$S_ChiefComplaint": "Testing chief complaint",
+    "ctl00$phFolderContent$ucSOAPNote$S_HOPI_Original": "Testing History of Presnet Illness",
+    "ctl00$phFolderContent$ucSOAPNote$OnsetDate$Month": "",
+    "ctl00$phFolderContent$ucSOAPNote$OnsetDate$Day": "",
+    "ctl00$phFolderContent$ucSOAPNote$OnsetDate$Year": "",
+    "ctl00$phFolderContent$ucSOAPNote$ddlAdvancedDirectiveType": "100000",
+    "ctl00$phFolderContent$ucSOAPNote$DateReviewed$Month": "",
+    "ctl00$phFolderContent$ucSOAPNote$DateReviewed$Day": "",
+    "ctl00$phFolderContent$ucSOAPNote$DateReviewed$Year": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_MedicalHistory": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_SurgicalHistory": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_FamilyHistory": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_SocialHistory": "",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$ddlSmokingStatus": "0",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$ddlSmokingFrequency": "0",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$ddlSmokingStartDateType": "3",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$SmokingStartDate$Month": "01",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$SmokingStartDate$Day": "01",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$SmokingStartDate$Year": "",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$ddlSmokingEndDateType": "3",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$SmokingEndDate$Month": "01",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$SmokingEndDate$Day": "01",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$SmokingEndDate$Year": "",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$ddlTobaccoSNOMEDCode": "0",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$ddlTobaccoFrequency": "0",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$ddlTobaccoStartDateType": "3",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$TobaccoStartDate$Month": "01",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$TobaccoStartDate$Day": "01",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$TobaccoStartDate$Year": "",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$ddlTobaccoEndDateType": "3",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$TobaccoEndDate$Month": "01",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$TobaccoEndDate$Day": "01",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$TobaccoEndDate$Year": "",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$LastTobaccoUseReviewDate$Month": "",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$LastTobaccoUseReviewDate$Day": "",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$LastTobaccoUseReviewDate$Year": "",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$SmokingComments": "",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$hdnSmokingStartDate": "",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$hdnSmokingEndDate": "",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$hdnTobaccoStartDate": "",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$hdnTobaccoEndDate": "",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$hdnLastTobaccoUseReviewDate": "",
+    "ctl00$phFolderContent$ucSOAPNote$PatientSmoking$hdnStatusID": "340",
+    "ctl00$phFolderContent$ucSOAPNote$hdnddlAllergiesType": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ddlAllergiesType": "0",
+    "ctl00$phFolderContent$ucSOAPNote$S_AllergiesInputSelection": "2",
+    "ctl00$phFolderContent$ucSOAPNote$S_Allergies": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_MedicationsInputSelection": "2",
+    "ctl00$phFolderContent$ucSOAPNote$S_Medications": "ROI test",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Constitutional": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Head": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Neck": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Eyes": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Ears": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Nose": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Mouth": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Throat": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Cardiovascular": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Respiratory": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Gastrointestinal": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Genitourinary": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Musculoskeletal": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Skin_Breast": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Neurological": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Psychiatric": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Endocrine": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Lymphatic": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_AllergicImmunologic": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Custom1": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_Height2txt": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_Weight2txt": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_BMI2txt": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_BloodPressure_Systolic2txt": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_BloodPressure_Diastolic2txt": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_Temperature2txt": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_Pulse2txt": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_RespRate2txt": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_HeadCircumference2txt": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_Waist2txt": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_Glucose2txt": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_Objective": "Objective Notes",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_General": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_HeadEyeEarNoseThroat": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Neck": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Respiratory": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Cardiovascular": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Lung": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Breast": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Heart": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Adomen": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Genitourinary": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Lymphatic": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Musculoskeletal": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Skin": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Extremities": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Neurological": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Custom1": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_TR_ECG": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_TR_Imaging": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_TR_Laboratory": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$ICDType": "rdICD_10",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_09_1": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_09_1": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_09_2": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_09_2": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_09_3": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_09_3": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_09_4": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_09_4": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_09_5": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_09_5": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_09_6": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_09_6": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_09_7": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_09_7": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_09_8": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_09_8": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_09_9": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_09_9": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_09_10": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_09_10": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_09_11": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_09_11": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_09_12": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_09_12": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$A_A_09_0": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_10_1": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_10_1": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_10_2": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_10_2": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_10_3": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_10_3": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_10_4": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_10_4": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_10_5": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_10_5": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_10_6": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_10_6": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_10_7": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_10_7": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_10_8": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_10_8": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_10_9": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_10_9": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_10_10": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_10_10": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_10_11": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_10_11": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_10_12": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_10_12": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$A_A_10_0": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnGuideline": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnGuidelineLength": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnGuidelineText": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_AID_0": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_AID_0": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_Display": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_Display": "1",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnInsuranceID": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnInsuranceName": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnInsuranceSwitchDate": "10/01/2015",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_ID_1": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_Type_1": "1",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_AID_1": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_ID_1": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_Type_1": "3",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_AID_1": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_ID_2": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_Type_2": "1",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_AID_2": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_ID_2": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_Type_2": "3",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_AID_2": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_ID_3": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_Type_3": "1",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_AID_3": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_ID_3": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_Type_3": "3",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_AID_3": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_ID_4": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_Type_4": "1",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_AID_4": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_ID_4": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_Type_4": "3",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_AID_4": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_ID_5": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_Type_5": "1",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_AID_5": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_ID_5": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_Type_5": "3",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_AID_5": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_ID_6": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_Type_6": "1",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_AID_6": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_ID_6": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_Type_6": "3",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_AID_6": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_ID_7": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_Type_7": "1",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_AID_7": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_ID_7": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_Type_7": "3",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_AID_7": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_ID_8": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_Type_8": "1",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_AID_8": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_ID_8": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_Type_8": "3",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_AID_8": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_ID_9": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_Type_9": "1",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_AID_9": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_ID_9": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_Type_9": "3",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_AID_9": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_ID_10": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_Type_10": "1",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_AID_10": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_ID_10": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_Type_10": "3",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_AID_10": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_ID_11": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_Type_11": "1",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_AID_11": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_ID_11": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_Type_11": "3",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_AID_11": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_ID_12": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_Type_12": "1",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_09_AID_12": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_ID_12": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_Type_12": "3",
+    "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$hdnICD_10_AID_12": "0",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTCode0": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDescription0": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTPOS0": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierA0": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierB0": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierC0": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierD0": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDiagPointer0": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTFee0": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTUnit0": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTNdc": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$NationalDrugCodeId0": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTCode1": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDescription1": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTPOS1": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierA1": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierB1": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierC1": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierD1": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDiagPointer1": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTFee1": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTUnit1": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$NationalDrugCodeId1": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTCode2": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDescription2": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTPOS2": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierA2": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierB2": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierC2": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierD2": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDiagPointer2": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTFee2": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTUnit2": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$NationalDrugCodeId2": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTCode3": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDescription3": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTPOS3": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierA3": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierB3": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierC3": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierD3": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDiagPointer3": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTFee3": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTUnit3": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$NationalDrugCodeId3": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTCode4": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDescription4": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTPOS4": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierA4": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierB4": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierC4": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierD4": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDiagPointer4": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTFee4": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTUnit4": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$NationalDrugCodeId4": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTCode5": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDescription5": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTPOS5": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierA5": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierB5": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierC5": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierD5": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDiagPointer5": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTFee5": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTUnit5": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$NationalDrugCodeId5": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTCode6": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDescription6": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTPOS6": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierA6": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierB6": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierC6": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierD6": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDiagPointer6": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTFee6": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTUnit6": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$NationalDrugCodeId6": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTCode7": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDescription7": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTPOS7": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierA7": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierB7": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierC7": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierD7": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDiagPointer7": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTFee7": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTUnit7": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$NationalDrugCodeId7": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTCode8": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDescription8": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTPOS8": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierA8": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierB8": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierC8": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierD8": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDiagPointer8": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTFee8": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTUnit8": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$NationalDrugCodeId8": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTCode9": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDescription9": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTPOS9": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierA9": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierB9": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierC9": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierD9": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDiagPointer9": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTFee9": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTUnit9": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$NationalDrugCodeId9": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTCode10": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDescription10": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTPOS10": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierA10": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierB10": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierC10": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierD10": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDiagPointer10": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTFee10": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTUnit10": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$NationalDrugCodeId10": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTCode11": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDescription11": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTPOS11": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierA11": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierB11": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierC11": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTModifierD11": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTDiagPointer11": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTFee11": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$EncounterCPTUnit11": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$NationalDrugCodeId11": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$hdnJsonString": "[]",
+    "ctl00$phFolderContent$ucSOAPNote$ucCPT$hdnLoadJsonString": "",
+    "ctl00$phFolderContent$ucSOAPNote$P_Procedures": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucImmunization$ucAddImmunization$hdnVISIDs": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucImmunization$ucAddImmunization$hdnVISPublicationIDs": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucImmunization$ucAddImmunization$hdnVISPublicationDateHTML": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucImmunization$ucAddImmunization$hdnMultipleVISID": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucImmunization$ucAddImmunization$hdnMultipleVISDate": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucImmunization$ucAddImmunization$hdnSendToRegistry": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucImmunization$ucAddImmunization$hdnInventoryID": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucImmunization$ucAddImmunization$hdnImmunizationRequestID": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucImmunization$ucAddImmunization$hdnRequiredDemographics": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_Immunization": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucAdminMed$hdnLoginUserName": "vdaniel2025",
+    "ctl00$phFolderContent$ucSOAPNote$ucAdminMed$hdnCompanyID": "315658",
+    "ctl00$phFolderContent$ucSOAPNote$ucAdminMed$ucAddAdministeredMedication$hdnDrugID": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucAdminMed$ucAddAdministeredMedication$hdnDrugName": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucAdminMed$ucAddAdministeredMedication$hdnDrugTypeID": "",
+    "ctl00$phFolderContent$ucSOAPNote$ucAdminMed$ucAddAdministeredMedication$hdnRxNormDrugId": "",
+    "ctl00$phFolderContent$ucSOAPNote$AdminMedication": "",
+    "ctl00$phFolderContent$ucSOAPNote$P_Plans": "",
+    "ctl00$phFolderContent$ucSOAPNote$P_PatientInstructions": "",
+    "Task": "Update",
+    "OrderIDs": "",
+    "CopyFromEncounterID": "",
+    "ctl00$phFolderContent$ucSOAPNote$hasMultipleTaxIds": "N",
+    "ctl00$phFolderContent$ucSOAPNote$hdnScrollPos": "0",
+    "ctl00$phFolderContent$ucSOAPNote$EncounterID": "325206320",
+    "ctl00$phFolderContent$ucSOAPNote$OfficeID": "",
+    "ctl00$phFolderContent$ucSOAPNote$EncounterType": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ChiefComplaint_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_HOPI_Original_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_HOPI_Expanded_Flag": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_HOPI_Location_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$S_HOPI_Quality_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$S_HOPI_Severity_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$S_HOPI_Duration_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$S_HOPI_Timing_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$S_HistoryOfPresentIllness_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$S_HOPI_ModifyingFactors_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$S_HOPI_AssociatedSigns_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$S_OnsetDate_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_History_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_MedicalHistory_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_SurgicalHistory_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_FamilyHistory_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_SocialHistory_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_GynecologicalHistory_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Constitutional_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Head_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Neck_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Eyes_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Ears_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Nose_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Mouth_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Throat_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Cardiovascular_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Respiratory_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Gastrointestinal_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Genitourinary_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Musculoskeletal_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Skin_Breast_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Neurological_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Psychiatric_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Lymphatic_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Endocrine_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_AllergicImmunologic_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_Allergies_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_Immunization_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_Medications_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_UseValidationControls": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_UnitOfMeasurement_Selected_Flag": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_BloodPressure_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_DisplayDate_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_BloodPressureSide_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_BloodPressurePosition_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_BMI_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_Pulse_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_Temperature_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_Weight_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_WeightOunces_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_Height_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_RespRate_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_Waist_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_HeadCircumference_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_Glucose_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_EDD_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_LMP_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_GrowthChart_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_Objective_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_General_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_HeadEyeEarNoseThroat_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Head_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Eye_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Ear_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Nose_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Mouth_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Throat_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Neck_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Lung_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Breast_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Heart_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Adomen_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Genitourinary_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Respiratory_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Musculoskeletal_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Cardiovascular_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Neurological_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Skin_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Lymphatic_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Extremities_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_CognitiveStatus_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$O_FunctionalStatus_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$O_TR_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_TR_ECG_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_TR_Imaging_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_TR_Laboratory_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_TR_Custom1_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$O_TR_Custom2_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$A_SNOMEDCodes_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$ProcedureCodes_Flag": "",
+    "ctl00$phFolderContent$ucSOAPNote$A_CancerCase_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$P_Procedures_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$P_ProceduresNotDone_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$P_Labs_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$P_Medications_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$P_MedicationsNotPrescribed_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$P_Plans_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$P_Goals_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$P_PatientInstructions_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$P_PatientComments_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$AdvancedDirective_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_Custom1_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$S_Custom2_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$S_Custom3_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$S_Custom4_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Custom1_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Custom2_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Custom3_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Custom4_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_Custom1_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_Custom2_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_Custom3_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_Custom4_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Custom1_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Custom2_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Custom3_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Custom4_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$A_SocialPsychologicalBehavioral_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$A_Custom1_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$A_Custom2_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$A_Health_Concerns_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$P_Custom1_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$P_Custom2_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$P_Custom3_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$P_Custom4_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$S_Custom1_Label": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_Custom2_Label": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_Custom3_Label": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_Custom4_Label": "",
+    "ctl00$phFolderContent$ucSOAPNote$P_AdministeredMedication_Flag": "Y",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Custom1_Label": "Review of Systems",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Custom2_Label": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Custom3_Label": "",
+    "ctl00$phFolderContent$ucSOAPNote$S_ROS_Custom4_Label": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_Custom1_Label": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_Custom2_Label": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_Custom3_Label": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_Custom4_Label": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Custom1_Label": "Physical Exam",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Custom2_Label": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Custom3_Label": "",
+    "ctl00$phFolderContent$ucSOAPNote$O_PE_Custom4_Label": "",
+    "ctl00$phFolderContent$ucSOAPNote$hdnO_VS_DateRecorded": "",
+    "ctl00$phFolderContent$ucSOAPNote$A_Custom1_Label": "",
+    "ctl00$phFolderContent$ucSOAPNote$A_Custom2_Label": "",
+    "ctl00$phFolderContent$ucSOAPNote$P_Custom1_Label": "",
+    "ctl00$phFolderContent$ucSOAPNote$P_Custom2_Label": "",
+    "ctl00$phFolderContent$ucSOAPNote$P_Custom3_Label": "",
+    "ctl00$phFolderContent$ucSOAPNote$P_Custom4_Label": "",
+    "ctl00$phFolderContent$ucSOAPNote$hdnUpdateDemographics": "",
+    "ctl00$phFolderContent$ucSOAPNote$hdnSmokingStatus": "",
+    "ctl00$phFolderContent$ucSOAPNote$hdnSmokingFrequency": "",
+    "ctl00$phFolderContent$ucSOAPNote$hdnUnitOfMeasurementID": "2",
+    "ctl00$phFolderContent$ucSOAPNote$hdnCurrentlyNoMedications": "False",
+    "ctl00$phFolderContent$ucSOAPNote$hdnCurrentlyNoAllergies": "False",
+    "ctl00$phFolderContent$ucSOAPNote$hdnAllergyListReviewed": "",
+    "ctl00$phFolderContent$ucSOAPNote$hdnHealthMaintenanceDesc": "",
+    "ctl00$phFolderContent$ucSOAPNote$hdnHealthMaintenanceDueDate": "",
+    "ctl00$phFolderContent$ucSOAPNote$AutoSave": "1200",
+    "ctl00$phFolderContent$ucSOAPNote$NewCropActivationDate": "",
+    "ctl00$phFolderContent$ucSOAPNote$P_NQFRecommendations": "",
+    "ctl00$phFolderContent$ucSOAPNote$VitalSignAlerts": "False",
+    "ctl00$phFolderContent$ucSOAPNote$hdnImmunID": "",
+    "ctl00$phFolderContent$ucSOAPNote$hdnSigAction": "",
+    "ctl00$phFolderContent$ucSOAPNote$hdnSigID": "",
+    "ctl00$phFolderContent$ucSOAPNote$hdnSigDosageActionTypeID": "",
+    "ctl00$phFolderContent$ucSOAPNote$hdnSigDosageNumberTypeID": "",
+    "ctl00$phFolderContent$ucSOAPNote$hdnSigDosageFormTypeID": "",
+    "ctl00$phFolderContent$ucSOAPNote$hdnSigDosageRouteTypeID": "",
+    "ctl00$phFolderContent$ucSOAPNote$hdnSigDosageFrequencyTypeID": "",
+    "ctl00$phFolderContent$ucSOAPNote$hdnSigDosageProblemTypeID": "",
+    "ctl00$phFolderContent$ucSOAPNote$hdnSigInformation": "",
+    "ctl00$phFolderContent$ucSOAPNote$hdnjsonCPTAlert": "",
+    "ctl00$phFolderContent$ucSOAPNote$hdnExpandROS": "",
+    "ctl00$phFolderContent$ucSOAPNote$hdnExpandPE": "",
+    "ctl00$phFolderContent$ucSOAPNote$hdnExpandTR": "",
+    "ctl00$phFolderContent$ucSOAPNote$hdnHasClicked": "6",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_O2_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$O_VS_SpO2_Flag": "N",
+    "ctl00$phFolderContent$ucSOAPNote$chkPrint_NQF": "N",
+    "ctl00$phFolderContent$ucSOAPNote$inputEhrLogin": "",
+    "OrderType": "",
+    "img": "",
+    "ctl00$ucVIM$hdnPatientInfo": '{"identifiers":{"ehrPatientId":"57089800","mrn":"57089800"},"demographics":{"firstName":"OF JULY","lastName":"4TH","middleName":"","dateOfBirth":null,"gender":"male"},"address":{"address1":"","address2":"","city":"","state":"","zipCode":"","fullAddress":" , , , "},"insurance":{"ehrInsurance":"","groupId":"","payerId":"","memberId":""},"contact_info":{"homePhoneNumber":"","mobilePhoneNumber":"","email":""},"pcp":{"ehrProviderId":"0","npi":"","demographics":{"firstName":"","lastName":"","middleName":""}}}',
+    "ctl00$ucVIM$hdnEncounterInfo": '{"identifiers":{"ehrEncounterId":"325206320"},"provider":{"ehrProviderId":"198417","npi":"1043473986","demographics":{"firstName":"VIJAI","lastName":"DANIEL, MD","middleName":""},"facility":{"facilityEhrId":"166396","name":"VIJAI J. DANIEL, M.D.","address":{"address1":"1660 E HERNDON AVE SUITE 101","address2":"","city":"FRESNO","state":"CA","zipCode":"93720-3346","fullAddress":"1660 E HERNDON AVE SUITE 101 , FRESNO, CA, 93720-3346"},"contact_info":{"mobilePhoneNumber":"559-431-9753","homePhoneNumber":"559-431-9753","faxNumber":"559-431-3478","email":""}},"specialty":[{"description":"Internal Medicine","taxonomies":["207RP1001X"]}],"providerDegree":"MD"},"assessment":{"diagnosisCodes":[]},"basicInformation":{"status":"UNLOCKED","encounterDateOfService":"2025-06-05"}}',
+    "ctl00$ucVIM$hdnReferralInfo": "",
+}
+
 
 def _extract_form_fields(html_content: str, form_id_or_name: str) -> Dict[str, str]:
     """
@@ -35,7 +669,7 @@ def _extract_form_fields(html_content: str, form_id_or_name: str) -> Dict[str, s
     if not form:
         form = soup.find("form", {"name": form_id_or_name})
     if not form:
-        print(f"Warning: Form with id/name '{form_id_or_name}' not found.")
+        logger.debug(f"Warning: Form with id/name '{form_id_or_name}' not found.")
         return {}
 
     data = {}
@@ -95,7 +729,7 @@ def _extract_form_fields_with_token(
     hdn_json_input = soup.find("input", {"id": re.compile("hdnJsonString$")})
     if hdn_json_input and hdn_json_input.get("name"):
         form_data["hdn_json_cpt_string_name"] = hdn_json_input["name"]
-        print(
+        logger.debug(
             f"    Found hdnJsonString field name: {form_data["hdn_json_cpt_string_name"]}"
         )
 
@@ -254,14 +888,14 @@ def _parse_appointments_from_html(
 
     appointment_table = soup.select_one("div#divDaily table.tblAppts")
     if not appointment_table:
-        print("Appointment table (div#divDaily table.tblAppts) not found.")
+        logger.debug("Appointment table (div#divDaily table.tblAppts) not found.")
         return appointments
 
     current_hour_display_str = ""
 
     thead = appointment_table.find("thead")
     if not thead:
-        print("Appointment table header (thead) not found.")
+        logger.debug("Appointment table header (thead) not found.")
         return appointments
 
     for row_idx, row in enumerate(thead.find_next_siblings("tr")):
@@ -438,6 +1072,122 @@ def _extract_encounter_ids_from_script(html_content: str) -> List[str]:
                 break
 
     return [eid for eid in all_encounter_ids if eid]
+
+
+def perform_pre_submission_check(
+    session: requests.Session, headers, patient_id, auth_token
+):
+    """
+    Performs the asynchronous validation check with the correct payload format and auth token.
+    """
+    logger.debug("-> Performing pre-submission validation check...")
+    api_url = f"https://pm.officeally.com/emr/CommonUserControls/Ajax/WebAPI/Api.aspx?method=POST&url=v1/patients/patientInformation/patientID/{patient_id}"
+
+    # The HAR file shows the 'ProcedureCodes' array is populated with empty placeholders.
+    # While it's empty in this specific interaction, we'll build it to match the structure.
+    # If CPT codes were entered, this array would be populated.
+    procedure_codes = []
+    # In a real scenario, you would loop through the CPT code inputs on the page
+    # to build this list. For this replication, we'll use the empty structure from the HAR.
+    for _ in range(38):  # The HAR file showed 38 empty objects.
+        procedure_codes.append(
+            {
+                "PatientID": int(patient_id),
+                "DateOfService": "6/6/2025",
+                "DateOfBirth": "01/01/1900",
+            }
+        )
+
+    # This is the inner 'data' object, which gets stringified.
+    inner_data = {
+        "DiagnosisCodes": "[]",  # Empty array as a string
+        "ProcedureCodes": json.dumps(procedure_codes),  # Array of objects, stringified
+    }
+
+    # This is the main JSON object that forms the request body.
+    # The 'data' field itself contains a JSON string.
+    api_payload_dict = {
+        "url": f"v1/patients/patientInformation/patientID/{patient_id}",
+        "urlparam": [],
+        "data": json.dumps(inner_data),
+        "method": "POST",
+        "contenttype": None,
+        "headers": [],
+        "type": 1,
+        "usetoken": True,
+    }
+
+    # The final data sent is the URL-encoded version of this dictionary.
+    final_api_data = parse.urlencode(api_payload_dict)
+
+    # Set up headers specific to this API call.
+    api_headers = headers.copy()
+    api_headers["Content-Type"] = "application/x-www-form-urlencoded; charset=UTF-8"
+    api_headers["X-Requested-With"] = "XMLHttpRequest"
+    api_headers["X-OA-AUTH-TOKEN"] = auth_token  # Use the extracted token here
+
+    try:
+        response = session.post(api_url, headers=api_headers, data=final_api_data)
+        if response.status_code == 200:
+            logger.debug("-> Pre-submission check successful (Status 200).")
+            return True
+        else:
+            logger.debug(
+                f"[ERROR] Pre-submission check failed with status code {response.status_code}."
+            )
+            # logger.debug(f"Response: {response.text}")
+            return False
+    except requests.exceptions.RequestException as e:
+        logger.debug(f"[ERROR] Network error during pre-submission check: {e}")
+        return False
+
+
+def create_progress_note_incremental(html_content):
+    """
+    Automates creating a progress note by using a known-good payload as a template
+    and incrementally updating it with dynamic values found in the HTML source.
+    """
+    logger.debug(
+        "--- Office Ally Progress Note Automation (Incremental Update Method) ---"
+    )
+    soup = BeautifulSoup(html_content, "html.parser")
+    form = soup.find("form", {"id": "aspnetForm"})
+    if not form:
+        raise FileNotFoundError(
+            "Could not find the <form> with id='aspnetForm' in the HTML."
+        )
+
+    # Create a working copy of our template
+    payload = DEMO_PAYLOAD.copy()
+
+    # Incrementally update payload with values from the HTML
+    for key in DEMO_PAYLOAD:
+        element = form.find(["input", "select", "textarea"], {"name": key})
+        if not element:
+            continue  # Keep the template value if element not found
+
+        value = None
+        if element.name == "input":
+            value = element.get("value", "")
+        elif element.name == "select":
+            selected_option = element.find("option", selected=True)
+            value = selected_option.get("value", "") if selected_option else None
+        elif element.name == "textarea":
+            value = element.get_text()
+
+        # ONLY update the payload if the HTML provides a non-empty value
+        if value:
+            payload[key] = value
+
+    # Sanity check for critical dynamic fields
+    if "PLACEHOLDER" in payload["__VIEWSTATE"]:
+        logger.debug(
+            "\n[ERROR] Critical field '__VIEWSTATE' was not found in the HTML and could not be updated."
+        )
+        return
+
+    logger.debug("-> Dynamic values updated successfully.")
+    return payload
 
 
 class SOAPNotes(BaseModel):

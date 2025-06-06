@@ -9,6 +9,8 @@ from submodule_integrations.office_ally.office_ally_integrations_utility import 
     _extract_form_fields_with_token,
     _parse_appointments_from_html,
     _parse_patient_phi_from_html,
+    create_progress_note_incremental,
+    perform_pre_submission_check,
 )
 from submodule_integrations.utils.errors import (
     IntegrationError,
@@ -599,9 +601,10 @@ class AllyIntegration(Integration):
         initial_html_content = response_get.text
         current_url_after_get = response_get.url
 
-        form_data, _ = _extract_form_fields_with_token(
-            initial_html_content, "aspnetForm"
-        )
+        # form_data, _ = _extract_form_fields_with_token(
+        #     initial_html_content, "aspnetForm"
+        # )
+        form_data = create_progress_note_incremental(initial_html_content)
         if not form_data.get("__VIEWSTATE"):
             logger.debug("CRITICAL: __VIEWSTATE not found on AddNote page.")
             return None, "Could not extract __VIEWSTATE from AddNote page."
@@ -611,80 +614,88 @@ class AllyIntegration(Integration):
         for key, value in self._translate_user_data(encounter_details).items():
             form_data[key] = value
 
-        form_data["Task"] = "Apply"
-        form_data["ctl00$phFolderContent$ucSOAPNote$btnApplyChange2"] = "Apply"
-        form_data["__EVENTTARGET"] = "ctl00$phFolderContent$ucSOAPNote$btnApplyChange2"
-
-        if (
+        """" if (
             "ctl00$phFolderContent$ucSOAPNote$ucCPT$hdnJsonString"
             or "hdn_json_cpt_string_name" not in form_data
         ):
             form_data["ctl00$phFolderContent$ucSOAPNote$ucCPT$hdnJsonString"] = "[]"
 
-        for asp_field in [
+       for asp_field in [
             "__EVENTARGUMENT",
             "__LASTFOCUS",
             "__SCROLLPOSITIONX",
             "__SCROLLPOSITIONY",
         ]:
-            form_data.setdefault(asp_field, "")
+            form_data.setdefault(asp_field, "") """
 
         logger.debug(
             f"Posting new note data to Office Ally form action (derived from GET): {urlparse(current_url_after_get).path}"
         )
 
-        post_target_url_path = urlparse(current_url_after_get).path
-        if not post_target_url_path.endswith(".aspx"):
-            post_target_url_path = base_url_page_path
+        post_target_url_path = f"https://pm.officeally.com/emr/PatientCharts/PatientChart_EditNote.aspx?PageAction=AddNote&SoapLayoutID=347185&Tab=C&PID={patient_id}&Scope=&Date1=&Date2="
 
         headers_post = self._setup_headers(
             content_type="application/x-www-form-urlencoded",
-            referer=current_url_after_get,
+            referer=post_target_url_path,
         )
 
         try:
-            response_post = self._make_request(
-                "POST",
-                post_target_url_path,
-                data=form_data,
-                headers=headers_post,
-                allow_redirects=False,
-            )
 
-            logger.debug(f"Create Note POST status: {response_post.status_code}")
-            logger.debug(f"Create Note Response Headers: {response_post.headers}")
+            if perform_pre_submission_check(
+                self.session,
+                headers_post,
+                patient_id,
+                form_data["__RequestVerificationToken"],
+            ):
+                response_post = self._make_request(
+                    "POST",
+                    post_target_url_path,
+                    data=form_data,
+                    headers=headers_post,
+                    allow_redirects=False,
+                )
 
-            if response_post.status_code == 302:
-                location_header = response_post.headers.get("Location")
-                if not location_header:
-                    return (
-                        None,
-                        "Note creation POST resulted in 302 but no Location header.",
-                    )
+                logger.debug(f"Create Note POST status: {response_post.status_code}")
+                logger.debug(f"Create Note Response Headers: {response_post.headers}")
 
-                logger.debug(f"Redirected after create to: {location_header}")
-                parsed_location = urlparse(location_header)
-                query_params_redirect = parse_qs(parsed_location.query)
-                new_eid = query_params_redirect.get("EID", [None])[0]
+                if response_post.status_code == 302:
+                    location_header = response_post.headers.get("Location")
+                    if not location_header:
+                        return (
+                            None,
+                            "Note creation POST resulted in 302 but no Location header.",
+                        )
 
-                if new_eid:
-                    return (
-                        new_eid,
-                        f"Successfully created note. New Encounter ID: {new_eid}",
-                    )
-                else:
-                    return (
-                        None,
-                        f"Note creation POST redirected, but EID not found in Location: {location_header}",
-                    )
+                    logger.debug(f"Redirected after create to: {location_header}")
+                    parsed_location = urlparse(location_header)
+                    query_params_redirect = parse_qs(parsed_location.query)
+                    new_eid = query_params_redirect.get("EID", [None])[0]
 
-            logger.debug(
-                f"Note creation POST did not redirect as expected. Status: {response_post.status_code}"
-            )
-            return (
-                None,
-                f"Note creation POST returned status {response_post.status_code}. Check response for errors.",
-            )
+                    if new_eid:
+                        return (
+                            new_eid,
+                            f"Successfully created note. New Encounter ID: {new_eid}",
+                        )
+                    else:
+                        return (
+                            None,
+                            f"Note creation POST redirected, but EID not found in Location: {location_header}",
+                        )
+
+                logger.debug(
+                    f"Note creation POST did not redirect as expected. Status: {response_post.status_code}"
+                )
+                return (
+                    None,
+                    f"Note creation POST returned status {response_post.status_code}. Check response for errors.",
+                )
+            else:
+                raise IntegrationAPIError(
+                    "office_ally",
+                    "There has been an error in creating progress notes. The server got an unexpected response from the pre-validation request.",
+                    status_code=502,
+                    error_code="VALIDATION_FAILED",
+                )
 
         except IntegrationAuthError:
             raise
