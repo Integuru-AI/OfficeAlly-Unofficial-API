@@ -10,23 +10,75 @@ from urllib import parse
 import requests
 
 _FIELD_MAPPING = {
-    "ChiefComplaint": "ctl00$phFolderContent$ucSOAPNote$S_ChiefComplaint",
-    "HOPI": "ctl00$phFolderContent$ucSOAPNote$S_HOPI_Original",
-    "Objective": "ctl00$phFolderContent$ucSOAPNote$O_Objective",
-    "AssessmentNotes": "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$A_A_10_0",  # For ICD-10 Assessment
-    "PlanNotes": "ctl00$phFolderContent$ucSOAPNote$P_Plans",
-    "PatientInstructions": "ctl00$phFolderContent$ucSOAPNote$P_PatientInstructions",
-    "Procedures": "ctl00$phFolderContent$ucSOAPNote$P_Procedures",
-    # Common header fields that are often required
+    # Encounter Details
     "EncounterDate_Month": "ctl00$phFolderContent$ucSOAPNote$EncounterDate$Month",
     "EncounterDate_Day": "ctl00$phFolderContent$ucSOAPNote$EncounterDate$Day",
     "EncounterDate_Year": "ctl00$phFolderContent$ucSOAPNote$EncounterDate$Year",
     "TreatingProvider": "ctl00$phFolderContent$ucSOAPNote$lstProvider",
     "Office": "ctl00$phFolderContent$ucSOAPNote$lstOffice",
     "EncounterType": "ctl00$phFolderContent$ucSOAPNote$lstEncounterType",
-    "CPTCodes_JSON": "ctl00$phFolderContent$ucSOAPNote$ucCPT$hdnJsonString",
-    "DiagnosisCode_1_ICD10": "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_10_1",
-    "DiagnosisDescription_1_ICD10": "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_10_1",
+    # --- Subjective Fields ---
+    "ChiefComplaint": "ctl00$phFolderContent$ucSOAPNote$S_ChiefComplaint",
+    "HOPI": "ctl00$phFolderContent$ucSOAPNote$S_HOPI_Original",
+    "OnsetDate_Month": "ctl00$phFolderContent$ucSOAPNote$OnsetDate$Month",
+    "OnsetDate_Day": "ctl00$phFolderContent$ucSOAPNote$OnsetDate$Day",
+    "OnsetDate_Year": "ctl00$phFolderContent$ucSOAPNote$OnsetDate$Year",
+    "MedicalHistory": "ctl00$phFolderContent$ucSOAPNote$S_MedicalHistory",
+    "SurgicalHistory": "ctl00$phFolderContent$ucSOAPNote$S_SurgicalHistory",
+    "FamilyHistory": "ctl00$phFolderContent$ucSOAPNote$S_FamilyHistory",
+    "SocialHistory": "ctl00$phFolderContent$ucSOAPNote$S_SocialHistory",
+    "Allergies": "ctl00$phFolderContent$ucSOAPNote$S_Allergies",
+    "CurrentMedications": "ctl00$phFolderContent$ucSOAPNote$S_Medications",
+    # Review of Systems (ROS)
+    "ROS_Constitutional": "ctl00$phFolderContent$ucSOAPNote$S_ROS_Constitutional",
+    "ROS_Head": "ctl00$phFolderContent$ucSOAPNote$S_ROS_Head",
+    "ROS_Neck": "ctl00$phFolderContent$ucSOAPNote$S_ROS_Neck",
+    "ROS_Eyes": "ctl00$phFolderContent$ucSOAPNote$S_ROS_Eyes",
+    "ROS_Ears": "ctl00$phFolderContent$ucSOAPNote$S_ROS_Ears",
+    "ROS_Nose": "ctl00$phFolderContent$ucSOAPNote$S_ROS_Nose",
+    "ROS_Mouth": "ctl00$phFolderContent$ucSOAPNote$S_ROS_Mouth",
+    "ROS_Throat": "ctl00$phFolderContent$ucSOAPNote$S_ROS_Throat",
+    "ROS_Cardiovascular": "ctl00$phFolderContent$ucSOAPNote$S_ROS_Cardiovascular",
+    "ROS_Respiratory": "ctl00$phFolderContent$ucSOAPNote$S_ROS_Respiratory",
+    "ROS_Gastrointestinal": "ctl00$phFolderContent$ucSOAPNote$S_ROS_Gastrointestinal",
+    "ROS_Genitourinary": "ctl00$phFolderContent$ucSOAPNote$S_ROS_Genitourinary",
+    "ROS_Musculoskeletal": "ctl00$phFolderContent$ucSOAPNote$S_ROS_Musculoskeletal",
+    "ROS_Integumentary": "ctl00$phFolderContent$ucSOAPNote$S_ROS_Skin_Breast",
+    "ROS_Neurological": "ctl00$phFolderContent$ucSOAPNote$S_ROS_Neurological",
+    "ROS_Psychiatric": "ctl00$phFolderContent$ucSOAPNote$S_ROS_Psychiatric",
+    "ROS_Endocrine": "ctl00$phFolderContent$ucSOAPNote$S_ROS_Endocrine",
+    "ROS_Hematologic": "ctl00$phFolderContent$ucSOAPNote$S_ROS_Lymphatic",
+    "ROS_Allergic": "ctl00$phFolderContent$ucSOAPNote$S_ROS_AllergicImmunologic",
+    # --- Objective Fields ---
+    "Objective": "ctl00$phFolderContent$ucSOAPNote$O_Objective",
+    # Physical Exam (PE)
+    "PE_General": "ctl00$phFolderContent$ucSOAPNote$O_PE_General",
+    "PE_ENMT": "ctl00$phFolderContent$ucSOAPNote$O_PE_HeadEyeEarNoseThroat",
+    "PE_Neck": "ctl00$phFolderContent$ucSOAPNote$O_PE_Neck",
+    "PE_Respiratory": "ctl00$phFolderContent$ucSOAPNote$O_PE_Respiratory",
+    "PE_Cardiovascular": "ctl00$phFolderContent$ucSOAPNote$O_PE_Cardiovascular",
+    "PE_Lungs": "ctl00$phFolderContent$ucSOAPNote$O_PE_Lung",
+    "PE_Chest": "ctl00$phFolderContent$ucSOAPNote$O_PE_Breast",
+    "PE_Heart": "ctl00$phFolderContent$ucSOAPNote$O_PE_Heart",
+    "PE_Abdomen": "ctl00$phFolderContent$ucSOAPNote$O_PE_Adomen",
+    "PE_Genitourinary": "ctl00$phFolderContent$ucSOAPNote$O_PE_Genitourinary",
+    "PE_Lymphatic": "ctl00$phFolderContent$ucSOAPNote$O_PE_Lymphatic",
+    "PE_Musculoskeletal": "ctl00$phFolderContent$ucSOAPNote$O_PE_Musculoskeletal",
+    "PE_Skin": "ctl00$phFolderContent$ucSOAPNote$O_PE_Skin",
+    "PE_Extremities": "ctl00$phFolderContent$ucSOAPNote$O_PE_Extremities",
+    "PE_Neurological": "ctl00$phFolderContent$ucSOAPNote$O_PE_Neurological",
+    # Test Results
+    "TestResults_ECG": "ctl00$phFolderContent$ucSOAPNote$O_TR_ECG",
+    "TestResults_Imaging": "ctl00$phFolderContent$ucSOAPNote$O_TR_Imaging",
+    "TestResults_Lab": "ctl00$phFolderContent$ucSOAPNote$O_TR_Laboratory",
+    # --- Assessment Fields ---
+    "AssessmentNotes_ICD10": "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$A_A_10_0",
+    "AssessmentNotes_ICD9": "ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$A_A_09_0",
+    # --- Plan Fields ---
+    "PlanNotes": "ctl00$phFolderContent$ucSOAPNote$P_Plans",
+    "PatientInstructions": "ctl00$phFolderContent$ucSOAPNote$P_PatientInstructions",
+    "Procedures": "ctl00$phFolderContent$ucSOAPNote$P_Procedures",
+    "AdministeredMedication": "ctl00$phFolderContent$ucSOAPNote$AdminMedication",
 }
 
 DEMO_PAYLOAD = {
@@ -1191,13 +1243,68 @@ def create_progress_note_incremental(html_content):
 
 
 class SOAPNotes(BaseModel):
+    # Subjective
     ChiefComplaint: Optional[str] = None
     HOPI: Optional[str] = None
+    OnsetDate_Month: Optional[str] = None
+    OnsetDate_Day: Optional[str] = None
+    OnsetDate_Year: Optional[str] = None
+    MedicalHistory: Optional[str] = None
+    SurgicalHistory: Optional[str] = None
+    FamilyHistory: Optional[str] = None
+    SocialHistory: Optional[str] = None
+    Allergies: Optional[str] = None
+    CurrentMedications: Optional[str] = None
+    ROS_Constitutional: Optional[str] = None
+    ROS_Head: Optional[str] = None
+    ROS_Neck: Optional[str] = None
+    ROS_Eyes: Optional[str] = None
+    ROS_Ears: Optional[str] = None
+    ROS_Nose: Optional[str] = None
+    ROS_Mouth: Optional[str] = None
+    ROS_Throat: Optional[str] = None
+    ROS_Cardiovascular: Optional[str] = None
+    ROS_Respiratory: Optional[str] = None
+    ROS_Gastrointestinal: Optional[str] = None
+    ROS_Genitourinary: Optional[str] = None
+    ROS_Musculoskeletal: Optional[str] = None
+    ROS_Integumentary: Optional[str] = None
+    ROS_Neurological: Optional[str] = None
+    ROS_Psychiatric: Optional[str] = None
+    ROS_Endocrine: Optional[str] = None
+    ROS_Hematologic: Optional[str] = None
+    ROS_Allergic: Optional[str] = None
+
+    # Objective
     Objective: Optional[str] = None
-    AssessmentNotes: Optional[str] = None
+    PE_General: Optional[str] = None
+    PE_ENMT: Optional[str] = None
+    PE_Neck: Optional[str] = None
+    PE_Respiratory: Optional[str] = None
+    PE_Cardiovascular: Optional[str] = None
+    PE_Lungs: Optional[str] = None
+    PE_Chest: Optional[str] = None
+    PE_Heart: Optional[str] = None
+    PE_Abdomen: Optional[str] = None
+    PE_Genitourinary: Optional[str] = None
+    PE_Lymphatic: Optional[str] = None
+    PE_Musculoskeletal: Optional[str] = None
+    PE_Skin: Optional[str] = None
+    PE_Extremities: Optional[str] = None
+    PE_Neurological: Optional[str] = None
+    TestResults_ECG: Optional[str] = None
+    TestResults_Imaging: Optional[str] = None
+    TestResults_Lab: Optional[str] = None
+
+    # Assessment
+    AssessmentNotes_ICD10: Optional[str] = None
+    AssessmentNotes_ICD9: Optional[str] = None
+
+    # Plan
     PlanNotes: Optional[str] = None
     PatientInstructions: Optional[str] = None
     Procedures: Optional[str] = None
+    AdministeredMedication: Optional[str] = None
 
 
 class EncounterDetails(BaseModel):
