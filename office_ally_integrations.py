@@ -647,6 +647,9 @@ class AllyIntegration(Integration):
                 patient_id,
                 form_data["__RequestVerificationToken"],
             ):
+                logger.debug(
+                    "Pre-submission check passed. Proceeding with API call to populate note."
+                )
                 response_post = self._make_request(
                     "POST",
                     post_target_url_path,
@@ -690,9 +693,12 @@ class AllyIntegration(Integration):
                     f"Note creation POST returned status {response_post.status_code}. Check response for errors.",
                 )
             else:
+                logger.debug(
+                    "Pre-submission check failed. Cannot populate progress notes"
+                )
                 raise IntegrationAPIError(
                     "office_ally",
-                    "There has been an error in creating progress notes. The server got an unexpected response from the pre-validation request.",
+                    "There has been an error in creating progress notes. The server got an unexpected response from the pre-validation request. As such, the progress note is created but remains unpopulated",
                     status_code=502,
                     error_code="VALIDATION_FAILED",
                 )
