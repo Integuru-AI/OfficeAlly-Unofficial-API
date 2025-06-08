@@ -4,8 +4,11 @@ import requests
 from submodule_integrations.models.integration import Integration
 from submodule_integrations.office_ally.office_ally_integrations_utility import (
     _FIELD_MAPPING,
+    _VITALS_FIELD_MAPPING,
     DiagnosisCode,
     ProcedureCode,
+    VitalSigns,
+    _calculate_bmi,
     _extract_encounter_ids_from_script,
     _extract_form_data_for_date_change,
     _extract_form_fields_with_token,
@@ -560,6 +563,7 @@ class AllyIntegration(Integration):
         encounter_details: Dict[str, str],
         diagnosis_codes: Optional[List[DiagnosisCode]] = None,
         procedure_codes: Optional[List[ProcedureCode]] = None,
+        vital_signs: Dict[str, str] | None = None,
         soap_layout_id: str = "347185",
     ) -> Tuple[Optional[str], str]:
         logger.debug(f"Attempting to create progress note for PID: {patient_id}")
@@ -617,6 +621,21 @@ class AllyIntegration(Integration):
             form_data[key] = value
         for key, value in self._translate_user_data(encounter_details).items():
             form_data[key] = value
+
+        if vital_signs:
+            for key, value in vital_signs.items():
+                if value is not None and key in _VITALS_FIELD_MAPPING:
+                    form_data[_VITALS_FIELD_MAPPING[key]] = value
+
+            height = vital_signs.get("Height_in")
+            weight = vital_signs.get("Weight_lb")
+
+            if height and weight:
+                calculated_bmi = _calculate_bmi(height, weight)
+                if calculated_bmi:
+                    bmi_key = _VITALS_FIELD_MAPPING["BMI"]
+                    form_data[bmi_key] = calculated_bmi
+                    logger.debug(f"-> Internally calculated BMI: {calculated_bmi}")
 
         if diagnosis_codes:
             for i, diag in enumerate(diagnosis_codes):
