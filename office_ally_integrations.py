@@ -4,6 +4,8 @@ import requests
 from submodule_integrations.models.integration import Integration
 from submodule_integrations.office_ally.office_ally_integrations_utility import (
     _FIELD_MAPPING,
+    DiagnosisCode,
+    ProcedureCode,
     _extract_encounter_ids_from_script,
     _extract_form_data_for_date_change,
     _extract_form_fields_with_token,
@@ -556,6 +558,8 @@ class AllyIntegration(Integration):
         patient_id: str,
         soap_notes: Dict[str, str],
         encounter_details: Dict[str, str],
+        diagnosis_codes: Optional[List[DiagnosisCode]] = None,
+        procedure_codes: Optional[List[ProcedureCode]] = None,
         soap_layout_id: str = "347185",
     ) -> Tuple[Optional[str], str]:
         logger.debug(f"Attempting to create progress note for PID: {patient_id}")
@@ -614,19 +618,80 @@ class AllyIntegration(Integration):
         for key, value in self._translate_user_data(encounter_details).items():
             form_data[key] = value
 
-        """" if (
-            "ctl00$phFolderContent$ucSOAPNote$ucCPT$hdnJsonString"
-            or "hdn_json_cpt_string_name" not in form_data
-        ):
-            form_data["ctl00$phFolderContent$ucSOAPNote$ucCPT$hdnJsonString"] = "[]"
+        if diagnosis_codes:
+            for i, diag in enumerate(diagnosis_codes):
+                if i >= 12:
+                    break  # OfficeAlly form only has 12 slots
+                code_key = (
+                    f"ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dc_10_{i+1}"
+                )
+                desc_key = (
+                    f"ctl00$phFolderContent$ucSOAPNote$ucDiagnosisCodes$dd_10_{i+1}"
+                )
+                form_data[code_key] = diag.code
+                form_data[desc_key] = diag.description
 
-       for asp_field in [
-            "__EVENTARGUMENT",
-            "__LASTFOCUS",
-            "__SCROLLPOSITIONX",
-            "__SCROLLPOSITIONY",
-        ]:
-            form_data.setdefault(asp_field, "") """
+        if procedure_codes:
+            cpt_json_list = []
+            num_cpt_codes = len(procedure_codes)
+
+            for i in range(12):
+                base_name = f"ctl00$phFolderContent$ucSOAPNote$ucCPT$SoapNoteCPT$"
+
+                if i < num_cpt_codes:
+                    cpt = procedure_codes[i]
+                    form_data[f"{base_name}EncounterCPTCode{i}"] = cpt.code
+                    form_data[f"{base_name}EncounterCPTDescription{i}"] = (
+                        cpt.description
+                    )
+                    form_data[f"{base_name}EncounterCPTPOS{i}"] = cpt.pos
+                    form_data[f"{base_name}EncounterCPTModifierA{i}"] = ""
+                    form_data[f"{base_name}EncounterCPTModifierB{i}"] = ""
+                    form_data[f"{base_name}EncounterCPTModifierC{i}"] = ""
+                    form_data[f"{base_name}EncounterCPTModifierD{i}"] = ""
+                    form_data[f"{base_name}EncounterCPTDiagPointer{i}"] = ""
+                    form_data[f"{base_name}EncounterCPTFee{i}"] = cpt.fee
+                    form_data[f"{base_name}EncounterCPTUnit{i}"] = cpt.units
+                    form_data[f"{base_name}EncounterCPTNdc"] = ""
+                    form_data[f"{base_name}NationalDrugCodeId{i}"] = ""
+
+                    cpt_object = {
+                        "EncounterCPTLineNumber": str(i + 1),
+                        "EncounterCPTCode": cpt.code,
+                        "EncounterCPTDescription": cpt.description,
+                        "EncounterCPTPOS": cpt.pos,
+                        "EncounterCPTModifierA": "",
+                        "EncounterCPTModifierB": "",
+                        "EncounterCPTModifierC": "",
+                        "EncounterCPTModifierD": "",
+                        "EncounterCPTDiagPointer": "",
+                        "EncounterCPTFee": cpt.fee,
+                        "EncounterCPTUnit": cpt.units,
+                        "EncounterCPTNdc": "",
+                        "NationalDrugCodeId": 0,
+                    }
+                    cpt_json_list.append(cpt_object)
+                else:
+                    form_data[f"{base_name}EncounterCPTCode{i}"] = ""
+                    form_data[f"{base_name}EncounterCPTDescription{i}"] = ""
+                    form_data[f"{base_name}EncounterCPTPOS{i}"] = ""
+                    form_data[f"{base_name}EncounterCPTModifierA{i}"] = ""
+                    form_data[f"{base_name}EncounterCPTModifierB{i}"] = ""
+                    form_data[f"{base_name}EncounterCPTModifierC{i}"] = ""
+                    form_data[f"{base_name}EncounterCPTModifierD{i}"] = ""
+                    form_data[f"{base_name}EncounterCPTDiagPointer{i}"] = ""
+                    form_data[f"{base_name}EncounterCPTFee{i}"] = ""
+                    form_data[f"{base_name}EncounterCPTUnit{i}"] = ""
+                    form_data[f"{base_name}EncounterCPTNdc{i}"] = ""
+                    form_data[f"{base_name}NationalDrugCodeId{i}"] = ""
+
+            form_data["ctl00$phFolderContent$ucSOAPNote$chkPrint_CPT"] = "no"
+
+        form_data["ctl00$phFolderContent$ucSOAPNote$ucCPT$hdnJsonString"] = json.dumps(
+            cpt_json_list
+        )
+        form_data["ctl00$phFolderContent$ucSOAPNote$ucCPT$hdnLoadJsonString"] = ""
+        form_data["ctl00$phFolderContent$ucSOAPNote$hdnHasClicked"] = 1
 
         logger.debug(
             f"Posting new note data to Office Ally form action (derived from GET): {urlparse(current_url_after_get).path}"
@@ -640,12 +705,17 @@ class AllyIntegration(Integration):
         )
 
         try:
+            patient_phi = await self.get_patient_phi(patient_id)
+            patient_dob = patient_phi.get("dob")
 
             if perform_pre_submission_check(
                 self.session,
                 headers_post,
                 patient_id,
                 form_data["__RequestVerificationToken"],
+                diagnosis_codes,
+                procedure_codes,
+                patient_dob,
             ):
                 logger.debug(
                     "Pre-submission check passed. Proceeding with API call to populate note."
@@ -681,7 +751,9 @@ class AllyIntegration(Integration):
                         )
                     else:
                         return (
-                            None,
+                            form_data.get(
+                                "ctl00$phFolderContent$ucSOAPNote$EncounterID"
+                            ),
                             f"Note creation POST redirected, but EID not found in Location: {location_header}",
                         )
 
@@ -689,7 +761,7 @@ class AllyIntegration(Integration):
                     f"Note creation POST did not redirect as expected. Status: {response_post.status_code}"
                 )
                 return (
-                    None,
+                    form_data.get("ctl00$phFolderContent$ucSOAPNote$EncounterID"),
                     f"Note creation POST returned status {response_post.status_code}. Check response for errors.",
                 )
             else:
